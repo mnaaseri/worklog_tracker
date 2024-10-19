@@ -1,0 +1,13 @@
+*.pyc
+*.pyo
+*.pyd
+*.pyo
+/**/migrations/*
+*.sqlite3
+*.db
+media/
+*.key
+**/**/__pycache__/*
+.env
+.scannwork
+*.properties

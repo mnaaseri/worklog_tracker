@@ -1,0 +1,20 @@
+version: '3'
+
+services:
+  web: 
+    build: .
+    command: sh -c "python manage.py runserver 0.0.0.0:8000"
+    volumes: 
+      - ./app:/app
+    ports: 
+      - "8000:8000"
+    env_file: 
+      - .env
+
+  bot:
+    build: ./bot_interactor
+    command: python bot_manager.py
+    volumes:
+      - ./bot_interactor:/bot_interactor
+    env_file:
+      - .env
