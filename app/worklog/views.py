@@ -12,11 +12,14 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.generic.edit import CreateView
 from persiantools.jdatetime import JalaliDate
 from rest_framework import generics, status, viewsets
-from rest_framework.authtoken.models import Token
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from userauths.models import User
+from django.http import Http404
+from django.core.exceptions import ObjectDoesNotExist, ValidationError as DjangoValidationError
+from rest_framework.exceptions import ValidationError, NotFound, PermissionDenied
+
 
 from .forms import WorkLogForm
 from .models import Leave, WorkLog
@@ -24,7 +27,6 @@ from .serializers import (HourlyLeaveSerializer, JalaliLeaveSerializer,
                           LeaveSerializer, WorkLogDaySerializer,
                           WorkLogSerializer, TelegramWorkLogSerializer,
                           TelegramLeaveSerializer, TelegramJalaliLeaveSerializer)
-
 
 
 
@@ -43,8 +45,8 @@ class TelegramWorkLogView(viewsets.ModelViewSet):
         try:
             user = User.objects.get(telegram_id=telegram_id) 
             serializer.save(user=user)
-        except ObjectDoesNotExist:
-            raise ValidationError({"error": f"User with telegram_id {telegram_id} does not exist."})
+        except ObjectDoesNotExist as exc:
+            raise ValidationError({"error": f"User with telegram_id {telegram_id} does not exist."}) from exc
     
     def create(self, request, *args, **kwargs):
         telegram_id = self.kwargs['telegram_id']
@@ -56,28 +58,28 @@ class TelegramWorkLogView(viewsets.ModelViewSet):
             return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
         except ValidationError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-            
 
-@method_decorator(csrf_exempt, name='dispatch') 
+
+@method_decorator(csrf_exempt, name='dispatch')
 class TelegramLeaveView(viewsets.ModelViewSet):
     permission_classes = [AllowAny]
     serializer_class = TelegramJalaliLeaveSerializer
-    
+
     def get_queryset(self):
         telegram_id = self.kwargs['telegram_id']
         try:
             return Leave.objects.get(telegram_id=telegram_id)
-        except ObjectDoesNotExist:
-            raise ValidationError({"error": f"No leaves found for telegram_id {telegram_id}."})
-        
-    
+        except ObjectDoesNotExist as exc:
+            raise ValidationError({"error": f"No leaves found for telegram_id {telegram_id}."}) from exc
+
+
     def perform_create(self, serializer):
         telegram_id = self.kwargs['telegram_id']
         try:
             user = User.objects.get(telegram_id=telegram_id)
             serializer.save(user=user)
-        except ObjectDoesNotExist:
-            raise ValidationError({"error": f"User with telegram_id {telegram_id} does not exist."})
+        except ObjectDoesNotExist as exc:
+            raise ValidationError({"error": f"User with telegram_id {telegram_id} does not exist."}) from exc
 
 
     def create(self, request, *args, **kwargs):
@@ -111,10 +113,10 @@ class TelegramJalaliMonthlyWorkLogView(viewsets.ModelViewSet):
                 user=user,
                 recorded_time__range=(start_date, end_date)
                 ).order_by('recorded_time')
-        except ObjectDoesNotExist:
-            raise ValidationError({"error": f"User with telegram_id {telegram_id} does not exist."})
-        except ValueError:
-            raise ValidationError({"error": "Invalid Jalali date."})
+        except ObjectDoesNotExist as exc:
+            raise ValidationError({"error": f"User with telegram_id {telegram_id} does not exist."}) from exc
+        except ValueError as exc:
+            raise ValidationError({"error": "Invalid Jalali date."}) from exc
 
 
     def list(self, request, *args, **kwargs):
@@ -152,61 +154,54 @@ class TelegramJalaliMonthlyWorkLogView(viewsets.ModelViewSet):
 
 
 @method_decorator(csrf_exempt, name='dispatch') 
-class TelegramJalaliMonthlyWorkLogView(viewsets.ModelViewSet):
-    serializer_class = WorkLogSerializer
+class TelegramJalaliMonthlyLeaveView(viewsets.ModelViewSet):
+    serializer_class = LeaveSerializer
     permission_classes = [AllowAny]
-
+    
     def get_queryset(self):
         telegram_id = self.kwargs['telegram_id']
         jalali_year = int(self.kwargs['jalali_year'])
         jalali_month = int(self.kwargs['jalali_month'])
+        user = User.objects.get(telegram_id=telegram_id)
+        queryset = Leave.objects.filter(user=user)
+
+        filtered_queryset = []
+        for leave in queryset:
+            leave_jalali_date = JalaliDate.to_jalali(leave.leave_date)
+            if leave_jalali_date.year == jalali_year and leave_jalali_date.month == jalali_month:
+                filtered_queryset.append(leave)
         
-        try:
-            start_date = JalaliDate(jalali_year, jalali_month, 1).to_gregorian()
-            end_date = JalaliDate(jalali_year, jalali_month + 1, 1).to_gregorian() - timedelta(seconds=1)
+        return filtered_queryset
+
+    def list(self, request, *args, **kwargs):  
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+        
+        total_days = 0
+        total_hours = timedelta()
+        
+        for leave in queryset:
+            leave_jalali_date = JalaliDate.to_jalali(leave.leave_date)
             
-            user = User.objects.get(telegram_id=telegram_id)
-            return WorkLog.objects.filter(
-                user=user,
-                recorded_time__range=(start_date, end_date)
-            ).order_by('recorded_time')
-        except ObjectDoesNotExist:
-            raise ValidationError({"error": f"User with telegram_id {telegram_id} does not exist."})
-        except ValueError:
-            raise ValidationError({"error": "Invalid Jalali date."})
+            if leave_jalali_date.year == int(self.kwargs['jalali_year']) and leave_jalali_date.month == int(self.kwargs['jalali_month']):
+                if leave.start_time and leave.end_time:
+                    start_datetime = datetime.combine(leave.leave_date, leave.start_time)
+                    end_datetime = datetime.combine(leave.leave_date, leave.end_time)
+                    total_hours += (end_datetime - start_datetime)
+                else:
+                    total_days += 1
 
-    def list(self, request, *args, **kwargs):
-        try:
-            queryset = self.get_queryset()
-            serializer = self.get_serializer(queryset, many=True)
+        total_hours_in_hours = total_hours.total_seconds() // 3600
+        total_minutes_in_minutes = (total_hours.total_seconds() % 3600) // 60
 
-            total_seconds = 0
-            current_start_time = None
-
-            for log in queryset:
-                if log.status == 'started':
-                    current_start_time = log.recorded_time
-                elif log.status == 'ended' and current_start_time:
-                    duration = log.recorded_time - current_start_time
-                    total_seconds += duration.total_seconds()
-                    current_start_time = None
-
-            days, remainder = divmod(total_seconds, 86400)
-            hours, remainder = divmod(remainder, 3600)
-            minutes, _ = divmod(remainder, 60)
-
-            response_data = {
-                'work_logs': serializer.data,
-                'total_hours': {
-                    'days': int(days),
-                    'hours': int(hours),
-                    'minutes': int(minutes)
-                }
-            }
-
-            return Response(response_data)
-        except ValidationError as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({
+            'leave_records': serializer.data,
+            'total_days': total_days,
+            'total_hours': int(total_hours_in_hours),
+            'total_minutes': int(total_minutes_in_minutes),
+            'jalali_year': self.kwargs['jalali_year'],
+            'jalali_month': self.kwargs['jalali_month']
+        })
 
     
 class WorkLogCreateView(LoginRequiredMixin, CreateView):
@@ -227,20 +222,24 @@ class WorkLogCreateView(LoginRequiredMixin, CreateView):
         return kwargs
     
     def form_valid(self, form):
-        form.instance.user = self.request.user
-        self.object = form.save()
-        current_month = datetime.now().strftime('%B')
-        current_year = datetime.now().year
-        current_month_logs = WorkLog.objects.filter(
-            user=self.request.user,
-            recorded_time__year=current_year,
-            recorded_time__month=datetime.now().month
-            ).order_by('recorded_time')
-        context = self.get_context_data(form=form)
-        context['current_month_logs'] = current_month_logs
-        context['current_month'] = current_month
-        context['current_year'] = current_year
-        return self.render_to_response(context)
+        try:
+            form.instance.user = self.request.user
+            self.object = form.save()
+            current_month = datetime.now().strftime('%B')
+            current_year = datetime.now().year
+            current_month_logs = WorkLog.objects.filter(
+                user=self.request.user,
+                recorded_time__year=current_year,
+                recorded_time__month=datetime.now().month
+                ).order_by('recorded_time')
+            context = self.get_context_data(form=form)
+            context['current_month_logs'] = current_month_logs
+            context['current_month'] = current_month
+            context['current_year'] = current_year
+            return self.render_to_response(context)
+        except Exception as e:
+            messages.error(self.request, f"Error creating work log: {str(e)}")
+            return self.form_invalid(form)
     
     def get_success_url(self):
         return reverse_lazy('user-worklogs', kwargs={'user_pk': self.request.user.pk})
@@ -260,30 +259,22 @@ class WorkLogViewSet(viewsets.ModelViewSet):
         serializer.save(user=user)
 
     def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        self.perform_create(serializer)
-        headers = self.get_success_headers(serializer.data)
-        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+        try:
+            return super().create(request, *args, **kwargs)
+        except ValidationError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     def update(self, request, *args, **kwargs):
-        partial = kwargs.pop('partial', False)
-        instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=partial)
-        serializer.is_valid(raise_exception=True)
-        self.perform_update(serializer)
-        return Response(serializer.data)
-
-    def perform_update(self, serializer):
-        serializer.save()
+        try:
+            return super().update(request, *args, **kwargs)
+        except ValidationError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     def destroy(self, request, *args, **kwargs):
-        instance = self.get_object()
-        self.perform_destroy(instance)
-        return Response(status=status.HTTP_204_NO_CONTENT)
-
-    def perform_destroy(self, instance):
-        instance.delete()
+        try:
+            return super().destroy(request, *args, **kwargs)
+        except Http404:
+            return Response({"error": "Work log not found"}, status=status.HTTP_404_NOT_FOUND)
 
 
 
