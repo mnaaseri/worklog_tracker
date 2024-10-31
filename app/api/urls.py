@@ -2,7 +2,9 @@ from django.urls import include, path, re_path
 from rest_framework_simplejwt.views import TokenRefreshView
 
 from userauths import views as userauth_views
-from worklog import views as worklog_views
+from worklog import worklog_views
+from worklog import telegram_views
+from worklog import leave_views
 
 
 urlpatterns = [
@@ -51,61 +53,61 @@ urlpatterns = [
     # Leave
     path(
          'leave/add-daily/<int:user_pk>/',
-         worklog_views.LeaveCreateView.as_view({'get': 'list', 'post': 'create'}),
+         leave_views.LeaveCreateView.as_view({'get': 'list', 'post': 'create'}),
          name='add-leave'
          ),
     path('leave/record/<int:pk>/',
-         worklog_views.LeaveCreateView.as_view({
+         leave_views.LeaveCreateView.as_view({
               'get': 'retrieve', 'put': 'update', 'patch': 'partial_update', 'delete': 'destroy'
               }), name='leave-detail'
          ),
     path(
          'leave/add-hourly/<int:user_pk>/',
-         worklog_views.HourlyLeaveViewSet.as_view({'get': 'list', 'post': 'create'}),
+         leave_views.HourlyLeaveViewSet.as_view({'get': 'list', 'post': 'create'}),
          name='add-leave'),
     path(
          'leave/total/<int:user_id>/<int:month>/',
-         worklog_views.UserLeaveCountAPIView.as_view(),
+         leave_views.UserLeaveCountAPIView.as_view(),
          name='user-leave-count'
          ),
     path(
          'leave/total-hourly/<int:year>/<int:month>/',
-         worklog_views.MonthlyHourlyLeaveView.as_view(),
+         leave_views.MonthlyHourlyLeaveView.as_view(),
          name='total-monthly-hourly-leave'
          ),
     path(
          'leave/jalali/total-year/<int:jalali_year>/',
-         worklog_views.YearlyJalaliLeaveView.as_view(),
+         leave_views.YearlyJalaliLeaveView.as_view(),
          name='total_leave_jalali_year'
          ),
     path(
          'leave/jalali/total-month/<int:jalali_year>/<int:jalali_month>/',
-         worklog_views.MonthlyJalaliLeaveView.as_view(),
+         leave_views.MonthlyJalaliLeaveView.as_view(),
          name='total_leave_jalali_month'),
     path(
          'leave/jalali/add-daily/<int:user_pk>',
-         worklog_views.JalaliLeaveCreateAPIView.as_view({'post': 'create'}),
+         leave_views.JalaliLeaveCreateAPIView.as_view({'post': 'create'}),
          name='add_jalali_leave_day'),
 
    # Telegram
    re_path(
         r'^telegram/worklog/add/(?P<telegram_id>\d+)/$',
-        worklog_views.TelegramWorkLogView.as_view({'post': 'create'}),
+        telegram_views.TelegramWorkLogView.as_view({'post': 'create'}),
         name='worklog-telegram-create'
         ),
    re_path(
         r'^telegram/leave/add/(?P<telegram_id>\d+)/$',
-        worklog_views.TelegramLeaveView.as_view({'post': 'create'}),
+        telegram_views.TelegramLeaveView.as_view({'post': 'create'}),
         name='leave-telegram-create'
         ),
      re_path(
      r'^telegram/worklog/jalali/monthly/(?P<telegram_id>\d+)/(?P<jalali_year>\d{4})/(?P<jalali_month>\d{1,2})/$',
-     worklog_views.TelegramJalaliMonthlyWorkLogView.as_view({'get': 'list'}),
+     telegram_views.TelegramJalaliMonthlyWorkLogView.as_view({'get': 'list'}),
      name='jalali-monthly-worklog'
      ),
      re_path(
      r'^telegram/leave/jalali/monthly/(?P<telegram_id>\d+)/(?P<jalali_year>\d{4})/(?P<jalali_month>\d{1,2})/$',
-     worklog_views.TelegramJalaliMonthlyLeaveView.as_view({'get': 'list'}),
+     telegram_views.TelegramJalaliMonthlyLeaveView.as_view({'get': 'list'}),
      name='jalali-monthly-leave'
      ),
    
