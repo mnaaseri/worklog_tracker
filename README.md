@@ -43,10 +43,40 @@ Worklog Tracker is a personal worklog management application that utilizes a Dja
    - The Django application will be available at `http://localhost:8000`.
    - Use the Telegram bot to interact with your worklog by sending commands.
 
-## Usage
 
-- Access the application at `http://localhost:8000`.
-- Use the Telegram bot to interact with your worklog by sending commands.
+## Use Cases
 
+### Worklog Management
+
+#### Log Work Hours
+- **Description**: Log work hours and days.
+- **Preconditions**: Must be logged into the system.
+
+#### Review Worklog
+- **Description**: Get worklog entries by day or month.
+- **Preconditions**: Must be logged into the system.
+
+
+#### Log Leave Hours
+- **Description**: Add leave hour or days.
+- **Preconditions**: Must be logged into the system.
+
+
+#### Review Leave
+- **Description**: Get leave hour or days by day or month.
+- **Preconditions**:  Must be logged into the system.
+
+### Telegram Integration
+
+#### Add Worklog or Leave Hours
+- **Description**: Add time of starting and ending a work or leave via Telegram bot.
+- **Preconditions**: Must use a telegram account with the same id used when siging up. 
+
+#### Get Worklog or Leave Hours
+- **Description**: Get total work or leave hours via Telegram bot.
+- **Preconditions**: Must use a telegram account with the same id used when siging up. 
+
+#### Sign up
+- **Description**: Sign up to add or get worklog or leave times. 
 
 
